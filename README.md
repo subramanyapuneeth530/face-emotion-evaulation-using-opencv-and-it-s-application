@@ -21,7 +21,7 @@ It uses:
 The system performs **iris-based alignment** to normalize face pose, runs inference on the chosen pretrained model, and displays the predicted emotion probabilities in a live side panel.
 
 ## ⚙️ Project Structure
-
+```
 emotion_app/
 ├─ main.py                 ← core live app (accepts --model flag)
 ├─ launch.py               ← Tkinter GUI launcher (model selection buttons)
@@ -37,7 +37,7 @@ emotion_app/
 ├─ assets/                 ← (optional) icons, sample images
 ├─ requirements.txt        ← dependencies list
 └─ README.md
-
+```
 ## 🚀 How It Works — CPU-only safe loading
 
 `fer_live/utils.py` patches PyTorch and TIMM:
@@ -94,13 +94,13 @@ tk
 
 ## 📝 Usage — Command line
 
-python main.py --model enet_b0_7
-# or
-python main.py --model enet_b2_7
+```python main.py --model enet_b0_7```
+### or
+```python main.py --model enet_b2_7```
 
 ## 📝 Usage — GUI launcher
 
-python launch.py
+```python launch.py```
 
 A window appears with buttons:
 - “EffNet-B0 (7)”
