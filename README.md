@@ -1,123 +1,168 @@
-# face-emotion-evaulation-using-opencv-and-it-s-application
-CPU-only real-time emotion app: webcam frames → MediaPipe Face Mesh (iris 468/473) for eye-based alignment → 224×224 crop → pretrained HSEmotion EfficientNet-B2 → seven-class probabilities. OpenCV draws box + side panel with bars, headline, FPS. Torch patch forces CPU loading and handles TIMM quirks.
+# 🎭 Face Emotion Evaluation using OpenCV and HSEmotion
 
-# Introduction
-This project is a real-time, CPU-only emotion recognition app built with OpenCV (I/O + UI), MediaPipe Face Mesh (precise facial landmarks), and a pretrained HSEmotion EfficientNet-B2 model (AffectNet, 7 emotions). It aligns the face via iris landmarks, runs the classifier, and renders a side panel with per-emotion probabilities, top label, and FPS.
+**CPU-only real-time emotion recognition app**  
+➡️ Webcam frames → **MediaPipe Face Mesh** (iris alignment) → **224×224 crop** → one of several **HSEmotion pretrained EfficientNet models** → live emotion probabilities with an OpenCV GUI.
 
-# How the code works
+Includes:
+- CPU-safe PyTorch patch (no CUDA dependency)
+- Modular architecture (`fer_live` library)
+- Tkinter GUI launcher to choose between models (EffNet-B0/B2/etc.)
+- Real-time aligned face inference with per-emotion bar chart + FPS counter
 
-## 1) Safe CPU-only model loading (PyTorch patch)
-- We intercept `torch.load` with a wrapper that **forces `map_location='cpu'`** so checkpoints saved on CUDA deserialize on CPU-only machines.
-- We set `weights_only=False` (trusted source) to bypass PyTorch ≥2.6’s strict safe-unpickler default.
-- We **allow-list** TIMM’s `EfficientNet` class via `add_safe_globals` so unpickling its modules won’t fail.
-- A tiny **TIMM compatibility hotfix** ensures `DepthwiseSeparableConv` has the attribute `conv_s2d` in case your local TIMM build lacks it.
+## 🧠 Introduction
 
-**Why:** Removes CUDA dependency and common version/ABI pitfalls around model loading.
+This project is a **real-time facial emotion recognition system** designed to run **entirely on CPU**.
 
----
+It uses:
+- **OpenCV** for video I/O and UI visualization  
+- **MediaPipe Face Mesh** for high-precision landmark detection (eyes, iris)  
+- **HSEmotion** EfficientNet models trained on **AffectNet** (7 emotion classes)
 
-## 2) Libraries and configuration
-- **OpenCV**: camera capture, drawing, and windowing.
-- **MediaPipe Face Mesh**: fast, robust 3D facial landmark regression on CPU.
-- **HSEmotion (EfficientNet-B2)**: pretrained 7-class FER head (angry, disgust, fear, happy, sad, surprise, neutral).
-- Tunables:
-  - `OUT_SIZE=224` (aligned crop size),
-  - `MIN_FACE_SIDE=100` (skip too-small faces),
-  - `REQ_W×REQ_H=1280×720` (requested capture size),
-  - `PANEL_W` (UI panel width),
-  - `FULLSCREEN_AT_START`.
+The system performs **iris-based alignment** to normalize face pose, runs inference on the chosen pretrained model, and displays the predicted emotion probabilities in a live side panel.
 
----
+## ⚙️ Project Structure
 
-## 3) Face landmarks (MediaPipe Face Mesh)
-- We instantiate `FaceMesh(..., refine_landmarks=True, max_num_faces=1)`.
-- Each frame is converted to RGB and passed to `mesh.process()`.
-- With `refine_landmarks=True`, two **iris center** landmarks are available:
-  - `LEFT_IRIS = 468`, `RIGHT_IRIS = 473`.
+emotion_app/
+├─ main.py                 ← core live app (accepts --model flag)
+├─ launch.py               ← Tkinter GUI launcher (model selection buttons)
+│
+├─ fer_live/               ← custom Python package (modular code)
+│  ├─ __init__.py
+│  ├─ utils.py             ← PyTorch CPU-safe loader + TIMM fixes
+│  ├─ model.py             ← EmotionModel wrapper (HSEmotion inference)
+│  ├─ pipeline.py          ← Face alignment via MediaPipe iris landmarks
+│  ├─ gui.py               ← OpenCV-based UI drawing (panel, bbox)
+│  └─ adapters/            ← (optional) custom model adapters (FER+, ONNX, etc.)
+│
+├─ assets/                 ← (optional) icons, sample images
+├─ requirements.txt        ← dependencies list
+└─ README.md
 
-**Why:** Iris points are highly stable → precise alignment.
+## 🚀 How It Works — CPU-only safe loading
 
----
+`fer_live/utils.py` patches PyTorch and TIMM:
+- Forces CPU deserialization (`map_location='cpu'`)
+- Adds `EfficientNet` to the PyTorch safe unpickler allowlist
+- Fixes TIMM `DepthwiseSeparableConv` missing attributes
 
-## 4) Geometric alignment (eye-based similarity transform)
-- We read pixel coordinates of the two iris centers `(l_x,l_y)` and `(r_x,r_y)`.
-- We define **canonical eye locations** in the output crop (e.g., x≈35%/y≈35%, with fixed inter-eye distance).
-- We estimate a **similarity transform** `M` with `cv2.estimateAffinePartial2D(src_eyes, dst_eyes)`.
-  - This solves for rotation + uniform scale + translation (no shear).
-- We warp the original frame with `cv2.warpAffine(frame, M, (OUT_SIZE, OUT_SIZE))` to obtain a **224×224 aligned face**.
+✅ No CUDA required, compatible across PyTorch 2.x
 
-**Why:** Canonicalized pose (eyes level, consistent scale) greatly improves FER robustness to head tilt/zoom.
+## 🚀 How It Works — Real-time pipeline
 
----
+- Captures webcam frames using OpenCV  
+- Uses **MediaPipe Face Mesh** with `refine_landmarks=True` for precise iris points  
+  (`LEFT_IRIS=468`, `RIGHT_IRIS=473`)
+- Computes a similarity transform between current and canonical eye coordinates  
+- Aligns and crops a **224×224** face patch for consistent input
 
-## 5) Pretrained FER model (HSEmotion EfficientNet-B2)
-- We create `HSEmotionRecognizer(model_name='enet_b2_7', device='cpu')`.
-- Per aligned face:
-  1. Convert BGR → RGB.
-  2. Call `predict_emotions(img, logits=False)`.
-  3. Receive either:
-     - a **dict** `{emotion: prob}`, or
-     - a **NumPy array** of class probabilities.
+## 🚀 How It Works — Model inference
 
-**Why:** EfficientNet-B2 has strong features; the head is trained on AffectNet 7-class setup.
+- Supports **HSEmotion** pretrained models:
+  - `enet_b0_7`
+  - `enet_b2_7`
+  - (more can be added easily)
+- Each model outputs seven probabilities:
+  angry, disgust, fear, happy, sad, surprise, neutral
 
----
+You can add adapters for other frameworks (e.g., FER+, ONNX, MobileNet).
 
-## 6) Output normalization (robust across versions)
-- The helper `_scores_to_dict(raw, fer)` standardizes outputs:
-  - If `raw` is a dict → fill all seven class keys; missing ones become 0.
-  - If `raw` is an array → we try to read the model’s class order (e.g., `fer.emotions`, `fer.class_names`).
-  - Fallback to our fixed `CLASSES` ordering if the model doesn’t expose it.
-- We then compute the **top emotion** and keep the full probability vector for the UI.
+## 🚀 How It Works — Modular visualization (OpenCV UI)
 
----
+- Draws face bounding box + side info panel:
+  - Emotion bars (%)
+  - FPS
+  - Model name
+  - Status/debug messages
 
-## 7) Rendering and user interface (OpenCV)
-- We draw a quick **bounding box** around the detected landmarks (min/max over all points).
-- A right-side **panel** shows:
-  - **Status lines** (versions, “no face”, alignment errors, or inference errors with messages).
-  - **Bar chart** of all seven emotions (percentages).
-  - **Headline** with the top emotion (e.g., `HAPPY 92%`).
-  - **FPS** computed over a sliding window (updates every ~0.5s).
-- Window starts **fullscreen**; press `f` to toggle, `q`/`Esc` to quit.
+Keys:
+- `f` → toggle fullscreen
+- `q` / `Esc` → quit
 
----
+## 🛠️ Requirements
 
-## 8) Control flow per frame
-1. Capture frame from webcam.
-2. Run Face Mesh → landmarks (if none, show “no face”).
-3. If landmarks exist → compute similarity transform → warp to 224×224.
-4. If crop is large enough → run FER model → normalize scores → update UI.
-5. Compose `frame + panel`, `imshow`, handle key events.
+Install dependencies:
+pip install -r requirements.txt
 
----
+`requirements.txt` example:
+opencv-python
+mediapipe
+torch
+timm
+hsemotion
+numpy
+tk
 
-## 9) Performance & accuracy tips
-- Keep face reasonably large (≥120 px short side) and evenly lit.
-- If FPS dips, lower camera resolution or infer every 2–3 frames.
-- Alignment already stabilizes predictions; optional temporal smoothing (EMA) can be added later.
+## 📝 Usage — Command line
 
----
+python main.py --model enet_b0_7
+# or
+python main.py --model enet_b2_7
 
-## 10) Failure handling
-- If model/dep mismatch occurs, the panel shows a readable **exception type and message**.
-- TIMM/PyTorch quirks are mitigated by the **CPU patch** and **hotfix**; version info is printed once on startup for quick diagnostics.
+## 📝 Usage — GUI launcher
 
+python launch.py
 
-# Applications
-- UX testing and affective computing dashboards.  
-- EdTech/HealthTech engagement monitoring (with consent).  
-- Interactive installations, art projects, and games reacting to user emotion.  
-- Call-center/coaching tools for post-hoc session review.  
-- HCI research prototypes and classroom demos.
+A window appears with buttons:
+- “EffNet-B0 (7)”
+- “EffNet-B2 (7)”
 
-# Future endeavours
-- Swap backbone to ONNX Runtime (EmotiEff) for zero-PyTorch deps or to leverage GPU (onnxruntime-gpu).  
-- Add temporal smoothing (EMA or sliding window) and test-time augmentation for stability.  
-- Multi-face support with per-track alignment and asynchronous inference.  
-- Personal calibration: tiny logistic head trained on a small user dataset for domain adaptation.  
-- Export to ONNX + OpenCV DNN / TensorRT for embedded deployment.  
-- Add logging, metrics (macro-F1), and dataset tooling.
+Click one → it opens the live feed UI using that model.
 
-# Summary
-The app aligns faces with MediaPipe iris landmarks, feeds a canonical crop to a pretrained EfficientNet-B2 FER model, and shows real-time emotion probabilities in an OpenCV UI. A small torch/TIMM patch ensures CPU-safe loading. It’s accurate, fast enough on CPU, and ready to extend (multi-face, smoothing, ONNX, calibration) for production-grade use.
+Add new models by editing `MODELS` in `launch.py` and `MODEL_FACTORIES` in `main.py`.
+
+## 🧩 Adding More Models
+
+1) **HSEmotion variants**  
+   Add the model name to:
+   - `MODEL_FACTORIES` in `main.py`
+   - `MODELS` list in `launch.py`
+
+2) **Custom adapters (FER+/ONNX/MobileNet)**  
+   Create a file under `fer_live/adapters/` implementing a class with:
+   predict_bgr(face_bgr) -> dict {class: prob}
+
+   Register a constructor in `MODEL_FACTORIES` and add a button in `launch.py`.
+
+Tip: Keep returned keys aligned to:
+["angry","disgust","fear","happy","sad","surprise","neutral"]
+
+## ⚠️ Notes on Weights & Downloads
+
+Some HSEmotion model URLs may change. If a model fails to load with an HTTP 404:
+- Prefer `enet_b0_7` or `enet_b2_7` (known-good)
+- Temporarily hide broken entries in `launch.py` and `main.py`
+- Optionally pin `hsemotion` to a version that hosted those weights, or load from a local path if supported
+
+## 🧩 Supported Emotions
+
+| Class    | Description               |
+|--------- |---------------------------|
+| angry    | Anger or frustration      |
+| disgust  | Disapproval/disgust       |
+| fear     | Fear, anxiety             |
+| happy    | Joy, amusement            |
+| sad      | Sadness                   |
+| surprise | Shock, surprise           |
+| neutral  | Calm or relaxed           |
+
+## 💡 Applications
+
+- UX testing and engagement analysis  
+- EdTech or telehealth emotion monitoring (with consent)  
+- Art installations and interactive games  
+- Call center / coaching feedback visualization  
+- HCI and research experiments
+
+## 🔮 Future Enhancements
+
+- ONNX Runtime / TensorRT backend for acceleration  
+- Multi-face support with per-track alignment  
+- Temporal smoothing (EMA) for stability  
+- More pretrained models + adapters  
+- Export for embedded deployment (OpenCV DNN)
+
+## 🧾 Summary
+
+The app uses **MediaPipe** (iris landmarks) to align faces, feeds a canonical **224×224** crop into a chosen **HSEmotion EfficientNet** model, and displays real-time probabilities in an **OpenCV UI**.
+
+Everything is organized as a reusable library (`fer_live`), and a **Tkinter launcher** lets you select the model before the live session starts.
