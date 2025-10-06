@@ -4,7 +4,7 @@
 ➡️ Webcam frames → **MediaPipe Face Mesh** (iris alignment) → **224×224 crop** → one of several **HSEmotion pretrained EfficientNet models** → live emotion probabilities with an OpenCV GUI.
 
 Includes:
-- CPU-safe PyTorch patch (no CUDA dependency)
+- CPU-safe PyTorch patch (no CUDA dependency for now)
 - Modular architecture (`fer_live` library)
 - Tkinter GUI launcher to choose between models (EffNet-B0/B2/etc.)
 - Real-time aligned face inference with per-emotion bar chart + FPS counter
